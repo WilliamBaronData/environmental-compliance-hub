@@ -17,7 +17,25 @@ Applicable to any industry subject to environmental regulations —
 energy, manufacturing, construction, pharmaceuticals, healthcare,
 aerospace, and data centers — in the USA and globally (180+ countries).
 
-![Dashboard Preview](assets/screenshots/dashboard_preview.png)
+## Dashboard Screenshots
+
+### Overview
+![Overview](assets/screenshots/overview.png)
+
+### EPA Compliance — Regulatory Applicability Matrix
+![EPA Compliance](assets/screenshots/epa_compliance.png)
+
+### ISO 14001:2015
+![ISO 14001](assets/screenshots/iso_14001.png)
+
+### Impact Matrix — Conesa + Leopold
+![Impact Matrix](assets/screenshots/impact_matrix.png)
+
+### PDCA Tracker
+![PDCA Tracker](assets/screenshots/pdca_tracker.png)
+
+### Company Profile — Regulatory Determination + Report Downloads
+![Company Profile](assets/screenshots/company_profile.png)
 
 ## Regulations Covered
 
