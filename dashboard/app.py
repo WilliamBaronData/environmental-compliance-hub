@@ -23,6 +23,8 @@ import plotly.graph_objects as go
 import plotly.express as px
 from dash import Dash, Input, Output, dcc, html, dash_table
 import dash_bootstrap_components as dbc
+from report_generator import generate_all_reports
+from applicability import build_company_profile, determine_applicability
 from analysis import (load_facilities, load_conesa, load_applicability,
                       get_kpis, get_compliance_by_naics, get_compliance_by_city,
                       get_violation_analysis, get_compliance_distribution,
@@ -117,6 +119,7 @@ app.layout = html.Div([
     ],style={"display":"flex","gap":"10px","flexWrap":"wrap","padding":"14px 28px"}),
 
     # Tabs
+    dcc.Download(id="download-report"),
     dcc.Tabs(id="tabs",value="overview",
         children=[
             dcc.Tab(label="OVERVIEW",        value="overview",
@@ -128,6 +131,8 @@ app.layout = html.Div([
             dcc.Tab(label="IMPACT MATRIX",   value="matrix",
                     style=TAB_STYLE,selected_style=TAB_SELECTED),
             dcc.Tab(label="PDCA TRACKER",    value="pdca",
+                    style=TAB_STYLE,selected_style=TAB_SELECTED),
+            dcc.Tab(label="COMPANY PROFILE", value="profile",
                     style=TAB_STYLE,selected_style=TAB_SELECTED),
         ],
         style={"padding":"0 28px","background":C["panel2"]}),
@@ -158,6 +163,194 @@ def cb_kpis(tab):
         str(kpi["avg_score"]),str(kpi["total_violations"]),
         kpi["total_penalties"],str(kpi["iso_certified"]),
     )
+
+
+# ── Company Profile Tab ───────────────────────────────────────────────────────
+
+def render_profile_tab():
+    """Company Profile Input + Report Generator."""
+    return html.Div([
+
+        html.Div([
+            html.Div("COMPANY PROFILE — REGULATORY APPLICABILITY DETERMINATION",
+                     style={"fontSize":"9px","color":C["muted"],"letterSpacing":"2px",
+                            "marginBottom":"16px","textTransform":"uppercase"}),
+            html.Div("Enter your facility information to determine which EPA regulations apply and generate compliance reports.",
+                     style={"color":C["subtle"],"fontSize":"11px","marginBottom":"20px"}),
+
+            # Row 1 — Basic Info
+            html.Div([
+                html.Div([
+                    html.Label("Facility Name",style={"color":C["muted"],"fontSize":"10px","letterSpacing":"1px"}),
+                    dcc.Input(id="inp-facility-name",type="text",
+                              placeholder="Houston Chemical Plant",
+                              style={"width":"100%","background":C["panel2"],
+                                     "border":f"1px solid {C['border']}",
+                                     "color":C["text"],"padding":"8px",
+                                     "borderRadius":"4px","fontSize":"11px"}),
+                ],style={"flex":"2"}),
+                html.Div([
+                    html.Label("NAICS Code",style={"color":C["muted"],"fontSize":"10px","letterSpacing":"1px"}),
+                    dcc.Dropdown(id="inp-naics",
+                        options=[{"label":f"{k} — {v}","value":k}
+                                 for k,v in {
+                                     "211":"Oil & Gas Extraction",
+                                     "221":"Utilities",
+                                     "236":"Construction",
+                                     "324":"Petroleum & Coal",
+                                     "325":"Chemical Manufacturing",
+                                     "326":"Plastics & Rubber",
+                                     "331":"Primary Metal",
+                                     "332":"Fabricated Metal",
+                                     "334":"Electronics",
+                                     "336":"Transportation Equipment",
+                                     "486":"Pipeline Transport",
+                                     "562":"Waste Management",
+                                     "622":"Hospitals",
+                                 }.items()],
+                        placeholder="Select NAICS...",
+                        style={"fontSize":"11px","color":"#111827"}),
+                ],style={"flex":"1"}),
+                html.Div([
+                    html.Label("State",style={"color":C["muted"],"fontSize":"10px","letterSpacing":"1px"}),
+                    dcc.Dropdown(id="inp-state",
+                        options=[{"label":s,"value":s} for s in
+                                 ["TX","CA","LA","OH","PA","IL","NY","FL","GA","NC"]],
+                        placeholder="State...",
+                        style={"fontSize":"11px","color":"#111827"}),
+                ],style={"flex":"0.5"}),
+                html.Div([
+                    html.Label("Employees",style={"color":C["muted"],"fontSize":"10px","letterSpacing":"1px"}),
+                    dcc.Input(id="inp-employees",type="number",
+                              placeholder="150",min=1,
+                              style={"width":"100%","background":C["panel2"],
+                                     "border":f"1px solid {C['border']}",
+                                     "color":C["text"],"padding":"8px",
+                                     "borderRadius":"4px","fontSize":"11px"}),
+                ],style={"flex":"0.5"}),
+            ],style={"display":"flex","gap":"12px","marginBottom":"16px","alignItems":"flex-end"}),
+
+            # Row 2 — Chemical quantities
+            html.Div([
+                html.Div([
+                    html.Label("Max Chemical Qty (lbs)",style={"color":C["muted"],"fontSize":"10px"}),
+                    dcc.Input(id="inp-chem-qty",type="number",placeholder="15000",min=0,
+                              style={"width":"100%","background":C["panel2"],
+                                     "border":f"1px solid {C['border']}",
+                                     "color":C["text"],"padding":"8px",
+                                     "borderRadius":"4px","fontSize":"11px"}),
+                ],style={"flex":"1"}),
+                html.Div([
+                    html.Label("EHS Chemical Qty (lbs)",style={"color":C["muted"],"fontSize":"10px"}),
+                    dcc.Input(id="inp-ehs-qty",type="number",placeholder="800",min=0,
+                              style={"width":"100%","background":C["panel2"],
+                                     "border":f"1px solid {C['border']}",
+                                     "color":C["text"],"padding":"8px",
+                                     "borderRadius":"4px","fontSize":"11px"}),
+                ],style={"flex":"1"}),
+                html.Div([
+                    html.Label("Hazardous Waste (kg/month)",style={"color":C["muted"],"fontSize":"10px"}),
+                    dcc.Input(id="inp-waste-kg",type="number",placeholder="250",min=0,
+                              style={"width":"100%","background":C["panel2"],
+                                     "border":f"1px solid {C['border']}",
+                                     "color":C["text"],"padding":"8px",
+                                     "borderRadius":"4px","fontSize":"11px"}),
+                ],style={"flex":"1"}),
+                html.Div([
+                    html.Label("TRI Chemical Qty (lbs)",style={"color":C["muted"],"fontSize":"10px"}),
+                    dcc.Input(id="inp-tri-qty",type="number",placeholder="28000",min=0,
+                              style={"width":"100%","background":C["panel2"],
+                                     "border":f"1px solid {C['border']}",
+                                     "color":C["text"],"padding":"8px",
+                                     "borderRadius":"4px","fontSize":"11px"}),
+                ],style={"flex":"1"}),
+            ],style={"display":"flex","gap":"12px","marginBottom":"16px"}),
+
+            # Row 3 — Checkboxes
+            html.Div([
+                html.Div([
+                    dcc.Checklist(id="inp-checks",
+                        options=[
+                            {"label":"  Has Hazardous Chemicals",    "value":"has_haz"},
+                            {"label":"  Has EHS Chemicals",          "value":"has_ehs"},
+                            {"label":"  Has RMP Chemicals",          "value":"has_rmp"},
+                            {"label":"  Has Stormwater Discharge",   "value":"has_swppp"},
+                            {"label":"  Has Air Emissions",          "value":"has_air"},
+                            {"label":"  Seeks ISO 14001 Certification","value":"seeks_iso"},
+                        ],
+                        value=["has_haz","has_ehs","has_rmp","has_swppp","seeks_iso"],
+                        inline=True,
+                        style={"color":C["subtle"],"fontSize":"11px","gap":"16px"},
+                        inputStyle={"marginRight":"6px"},
+                    ),
+                ]),
+            ],style={"marginBottom":"20px"}),
+
+            # Analyze button
+            html.Div([
+                html.Button("🔍  ANALYZE REGULATORY REQUIREMENTS",
+                    id="btn-analyze",n_clicks=0,
+                    style={"background":C["primary"],"color":"white",
+                           "border":"none","padding":"10px 24px",
+                           "borderRadius":"6px","fontSize":"11px",
+                           "fontWeight":"700","letterSpacing":"2px",
+                           "cursor":"pointer","marginRight":"12px"}),
+            ],style={"marginBottom":"20px"}),
+
+            # Results
+            html.Div(id="profile-results"),
+
+        ],style={"background":C["panel"],"border":f"1px solid {C['border']}",
+                 "borderRadius":"8px","padding":"24px","marginBottom":"12px"}),
+
+        # Download buttons
+        html.Div([
+            html.Div("GENERATE COMPLIANCE REPORTS — READY FOR SIGNATURE",
+                     style={"fontSize":"9px","color":C["muted"],"letterSpacing":"2px",
+                            "marginBottom":"16px","textTransform":"uppercase"}),
+            html.Div([
+                html.Button("📥  Tier II Report",
+                    id="btn-tier2",n_clicks=0,
+                    style={"background":C["panel2"],"color":C["cyan"],
+                           "border":f"1px solid {C['cyan']}","padding":"8px 16px",
+                           "borderRadius":"6px","fontSize":"10px","cursor":"pointer",
+                           "fontWeight":"600","letterSpacing":"1px"}),
+                html.Button("📥  TRI Form R",
+                    id="btn-tri",n_clicks=0,
+                    style={"background":C["panel2"],"color":C["warning"],
+                           "border":f"1px solid {C['warning']}","padding":"8px 16px",
+                           "borderRadius":"6px","fontSize":"10px","cursor":"pointer",
+                           "fontWeight":"600","letterSpacing":"1px"}),
+                html.Button("📥  RCRA Summary",
+                    id="btn-rcra",n_clicks=0,
+                    style={"background":C["panel2"],"color":C["high"],
+                           "border":f"1px solid {C['high']}","padding":"8px 16px",
+                           "borderRadius":"6px","fontSize":"10px","cursor":"pointer",
+                           "fontWeight":"600","letterSpacing":"1px"}),
+                html.Button("📥  SWPPP Checklist",
+                    id="btn-swppp",n_clicks=0,
+                    style={"background":C["panel2"],"color":C["success"],
+                           "border":f"1px solid {C['success']}","padding":"8px 16px",
+                           "borderRadius":"6px","fontSize":"10px","cursor":"pointer",
+                           "fontWeight":"600","letterSpacing":"1px"}),
+                html.Button("📥  ISO 14001 Audit",
+                    id="btn-iso",n_clicks=0,
+                    style={"background":C["panel2"],"color":C["purple"],
+                           "border":f"1px solid {C['purple']}","padding":"8px 16px",
+                           "borderRadius":"6px","fontSize":"10px","cursor":"pointer",
+                           "fontWeight":"600","letterSpacing":"1px"}),
+                html.Button("📥  Executive Summary",
+                    id="btn-exec",n_clicks=0,
+                    style={"background":C["primary"],"color":"white",
+                           "border":"none","padding":"8px 16px",
+                           "borderRadius":"6px","fontSize":"10px","cursor":"pointer",
+                           "fontWeight":"700","letterSpacing":"1px"}),
+            ],style={"display":"flex","gap":"12px","flexWrap":"wrap"}),
+            html.Div(id="download-status",
+                     style={"color":C["success"],"fontSize":"11px","marginTop":"12px"}),
+        ],style={"background":C["panel"],"border":f"1px solid {C['border']}",
+                 "borderRadius":"8px","padding":"24px"}),
+    ])
 
 
 # ── Tab Content ───────────────────────────────────────────────────────────────
@@ -348,6 +541,8 @@ def render_tab(tab):
             ],style={"display":"flex","gap":"12px"}),
         ])
 
+    elif tab == "profile":
+        return render_profile_tab()
     return html.Div("Select a tab")
 
 
@@ -723,6 +918,158 @@ def cb_pdca_actions(tab):
         xaxis=dict(showgrid=False,color=C["muted"],title="Days Until Due"),
         yaxis=dict(showgrid=False,color=C["text"],tickfont=dict(size=9)))
     return fig
+
+
+
+
+@app.callback(
+    Output("profile-results","children"),
+    Input("btn-analyze","n_clicks"),
+    [
+        __import__('dash').dependencies.State("inp-facility-name","value"),
+        __import__('dash').dependencies.State("inp-naics","value"),
+        __import__('dash').dependencies.State("inp-state","value"),
+        __import__('dash').dependencies.State("inp-employees","value"),
+        __import__('dash').dependencies.State("inp-chem-qty","value"),
+        __import__('dash').dependencies.State("inp-ehs-qty","value"),
+        __import__('dash').dependencies.State("inp-waste-kg","value"),
+        __import__('dash').dependencies.State("inp-tri-qty","value"),
+        __import__('dash').dependencies.State("inp-checks","value"),
+    ],
+    prevent_initial_call=True)
+def cb_analyze(n_clicks, facility_name, naics, state, employees,
+               chem_qty, ehs_qty, waste_kg, tri_qty, checks):
+    if not facility_name or not naics or not state:
+        return html.Div("Please fill in Facility Name, NAICS Code and State.",
+                        style={"color":C["warning"],"fontSize":"11px"})
+    checks = checks or []
+    profile = build_company_profile(
+        facility_name           = facility_name or "Demo Facility",
+        naics_code              = naics or "325",
+        state                   = state or "TX",
+        employee_count          = int(employees or 50),
+        has_hazardous_chemicals = "has_haz"   in checks,
+        max_chemical_qty_lbs    = float(chem_qty or 0),
+        has_ehs_chemicals       = "has_ehs"   in checks,
+        ehs_chemical_qty_lbs    = float(ehs_qty or 0),
+        hazardous_waste_kg_month= float(waste_kg or 0),
+        has_rmp_chemicals       = "has_rmp"   in checks,
+        has_stormwater_discharge= "has_swppp" in checks,
+        has_air_emissions       = "has_air"   in checks,
+        tri_chemical_qty_lbs    = float(tri_qty or 0),
+        seeks_iso_14001         = "seeks_iso" in checks,
+    )
+    df = determine_applicability(profile)
+
+    rows = []
+    for _, row in df.iterrows():
+        applicable = row["applicable"]
+        color  = C["danger"] if applicable else C["success"]
+        status = "✅ REQUIRED" if applicable else "❌ NOT REQUIRED"
+        priority = row.get("priority","")
+        rows.append(html.Tr([
+            html.Td(str(row["regulation"]),
+                    style={"color":C["text"],"padding":"8px 12px",
+                           "fontSize":"11px","fontWeight":"600"}),
+            html.Td(html.Span(status,style={"color":color,"fontSize":"10px",
+                    "fontWeight":"700"}),style={"padding":"8px 12px"}),
+            html.Td(str(row.get("form","N/A")),
+                    style={"color":C["subtle"],"padding":"8px 12px","fontSize":"10px"}),
+            html.Td(str(row.get("deadline","N/A")),
+                    style={"color":C["warning"],"padding":"8px 12px","fontSize":"10px"}),
+            html.Td(html.Span(str(priority),style={
+                "color":"white",
+                "background": C["danger"]  if priority=="CRITICAL" else
+                              C["high"]    if priority=="HIGH"     else
+                              C["warning"] if priority=="MODERATE" else C["muted"],
+                "padding":"2px 8px","borderRadius":"3px","fontSize":"9px"}),
+                style={"padding":"8px 12px"}),
+        ],style={"borderBottom":f"1px solid {C['border']}"}))
+
+    required = df[df["applicable"]==True].shape[0]
+    return html.Div([
+        html.Div([
+            html.Span(f"✅ Analysis complete for {facility_name}  |  ",
+                      style={"color":C["success"],"fontSize":"11px"}),
+            html.Span(f"{required} regulations apply  |  ",
+                      style={"color":C["warning"],"fontSize":"11px","fontWeight":"700"}),
+            html.Span(f"NAICS {naics} — {state}",
+                      style={"color":C["muted"],"fontSize":"11px"}),
+        ],style={"marginBottom":"12px"}),
+        html.Table([
+            html.Thead(html.Tr([
+                html.Th(h,style={"color":C["muted"],"fontSize":"8px",
+                    "letterSpacing":"2px","padding":"8px 12px",
+                    "textTransform":"uppercase","fontWeight":"500",
+                    "borderBottom":f"1px solid {C['border']}"})
+                for h in ["Regulation","Status","Required Form","Deadline","Priority"]
+            ])),
+            html.Tbody(rows),
+        ],style={"width":"100%","borderCollapse":"collapse"}),
+    ])
+
+
+@app.callback(
+    Output("download-report","data"),
+    Output("download-status","children"),
+    Input("btn-tier2","n_clicks"),
+    Input("btn-tri","n_clicks"),
+    Input("btn-rcra","n_clicks"),
+    Input("btn-swppp","n_clicks"),
+    Input("btn-iso","n_clicks"),
+    Input("btn-exec","n_clicks"),
+    prevent_initial_call=True)
+def cb_download(n1,n2,n3,n4,n5,n6):
+    from dash import ctx
+    import base64
+    triggered = ctx.triggered_id
+    profile = build_company_profile(
+        facility_name="Houston Chemical Plant Demo",
+        naics_code="325", state="TX", employee_count=150,
+        has_hazardous_chemicals=True, max_chemical_qty_lbs=15000,
+        has_ehs_chemicals=True, ehs_chemical_qty_lbs=800,
+        hazardous_waste_kg_month=250, has_rmp_chemicals=True,
+        rmp_chemical_name="Chlorine", rmp_chemical_qty_lbs=3000,
+        has_stormwater_discharge=True, tri_chemical_qty_lbs=28000,
+        seeks_iso_14001=True,
+    )
+    from report_generator import (generate_tier_ii, generate_tri_form_r,
+                                   generate_rcra_summary, generate_swppp_checklist,
+                                   generate_iso_audit_report, generate_executive_summary)
+    from analysis import get_kpis
+    kpis = get_kpis(df_master)
+
+    btn_map = {
+        "btn-tier2": (generate_tier_ii,    [profile, []],       "Tier II Report"),
+        "btn-tri":   (generate_tri_form_r,  [profile, []],       "TRI Form R"),
+        "btn-rcra":  (generate_rcra_summary,[profile, []],       "RCRA Summary"),
+        "btn-swppp": (generate_swppp_checklist,[profile],        "SWPPP Checklist"),
+        "btn-iso":   (generate_iso_audit_report,[profile],       "ISO 14001 Audit"),
+        "btn-exec":  (generate_executive_summary,[profile,None,kpis],"Executive Summary"),
+    }
+    if triggered not in btn_map:
+        return None, ""
+
+    func, args, label = btn_map[triggered]
+    filepath = func(*args)
+    with open(filepath,"rb") as f:
+        encoded = base64.b64encode(f.read()).decode()
+    return (
+        {"content": encoded, "filename": filepath.name,
+         "base64": True, "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+        f"✅ {label} downloaded — {filepath.name}"
+    )
+
+
+# Profile tab integrated directly in render_tab above
+# Profile tab integrated directly in render_tab aboveif __name__ == "__main__":
+    print(f"\n{'='*52}")
+    print(f"  Environmental Compliance Hub")
+    print(f"  {len(df_master):,} facilities loaded")
+    print(f"  EPA + ISO 14001:2015 + Conesa + Leopold")
+    print(f"  Open: http://127.0.0.1:8053")
+    print(f"{'='*52}\n")
+    app.run(debug=True, host="127.0.0.1", port=8053)
 
 
 if __name__ == "__main__":
